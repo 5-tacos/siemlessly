@@ -1,0 +1,24 @@
+[
+  {
+    "id": "high-500-errors",
+    "name": "High Volume of 500 Errors",
+    "description": "Detects source IPs generating excessive 500 errors",
+    "query": "SELECT count(*) as err_count, source_ip FROM web_logs WHERE status_code >= 500 GROUP BY source_ip HAVING err_count > 50",
+    "severity": "high",
+    "enabled": true,
+    "destinations": [
+      { "type": "sns", "config": { "topic_arn": "arn:aws:sns:us-east-1:123456789012:siem-alerts" } }
+    ]
+  },
+  {
+    "id": "suspicious-patient-query",
+    "name": "Suspicious Table Query",
+    "description": "Detects DROP queries against patient_billing table",
+    "query": "SELECT * FROM web_logs WHERE table_name = 'patient_billing' AND query_type = 'DROP'",
+    "severity": "critical",
+    "enabled": true,
+    "destinations": [
+      { "type": "webhook", "config": { "url": "https://hooks.slack.com/services/XXX/YYY/ZZZ" } }
+    ]
+  }
+]

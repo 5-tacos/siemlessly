@@ -1,0 +1,30 @@
+name: Deploy Config
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "config/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Upload rules
+        run: aws s3 cp config/rules/rules.json "s3://${{ secrets.SIEM_DATA_BUCKET }}/rules/rules.json"
+
+      - name: Upload sources
+        run: aws s3 cp config/sources/sources.json "s3://${{ secrets.SIEM_DATA_BUCKET }}/sources/sources.json"

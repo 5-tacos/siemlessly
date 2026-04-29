@@ -1,0 +1,29 @@
+{
+  "type": "record",
+  "name": "web_log",
+  "fields": [
+    { "name": "timestamp", "type": "string" },
+    { "name": "request_id", "type": ["null", "string"], "default": null },
+    { "name": "source_ip", "type": ["null", "string"], "default": null },
+    { "name": "http_method", "type": ["null", "string"], "default": null },
+    { "name": "path", "type": ["null", "string"], "default": null },
+    { "name": "status_code", "type": ["null", "int"], "default": null },
+    { "name": "response_time_ms", "type": ["null", "int"], "default": null },
+    { "name": "request_size_bytes", "type": ["null", "int"], "default": null },
+    { "name": "response_size_bytes", "type": ["null", "int"], "default": null },
+    { "name": "user_agent", "type": ["null", "string"], "default": null },
+    { "name": "identity", "type": ["null", "string"], "default": null },
+    { "name": "api_version", "type": ["null", "string"], "default": null },
+    { "name": "query_id", "type": ["null", "string"], "default": null },
+    { "name": "source_service", "type": ["null", "string"], "default": null },
+    { "name": "query_type", "type": ["null", "string"], "default": null },
+    { "name": "table_name", "type": ["null", "string"], "default": null },
+    { "name": "execution_time_ms", "type": ["null", "int"], "default": null },
+    { "name": "rows_returned", "type": ["null", "int"], "default": null },
+    { "name": "rows_affected", "type": ["null", "int"], "default": null },
+    { "name": "parameters", "type": ["null", "string"], "default": null },
+    { "name": "correlated_request_id", "type": ["null", "string"], "default": null },
+    { "name": "database", "type": ["null", "string"], "default": null },
+    { "name": "employee_id", "type": ["null", "int"], "default": null }
+  ]
+}

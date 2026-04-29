@@ -1,0 +1,228 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless SIEM with DuckDB and Fargate
+
+Globals:
+  Function:
+    Timeout: 60
+    MemorySize: 1024
+    Runtime: python3.12
+    Architectures:
+      - x86_64
+
+Resources:
+  # --------------------------------------------------------
+  # S3 Storage
+  # --------------------------------------------------------
+  SiemDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "siem-data-${AWS::AccountId}-${AWS::Region}"
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToIA
+            Status: Enabled
+            Prefix: "processed/"
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+
+  # --------------------------------------------------------
+  # ECS / Fargate - Ingestion Pipeline
+  # --------------------------------------------------------
+  SiemEcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: SiemIngestionCluster
+
+  SiemIngestionTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::siem-data-${AWS::AccountId}-${AWS::Region}"
+                  - !Sub "arn:aws:s3:::siem-data-${AWS::AccountId}-${AWS::Region}/*"
+
+  SiemIngestionTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  SiemIngestionTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc
+      Cpu: "4096"
+      Memory: "16384"
+      TaskRoleArn: !GetAtt SiemIngestionTaskRole.Arn
+      ExecutionRoleArn: !GetAtt SiemIngestionTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: IngestionContainer
+          Image: "REPLACE_WITH_ECR_IMAGE_URI"
+          Environment:
+            - Name: S3_BUCKET
+              Value: !Sub "siem-data-${AWS::AccountId}-${AWS::Region}"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: /ecs/siem-ingestion
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  # --------------------------------------------------------
+  # CloudWatch Logs for Alerts
+  # --------------------------------------------------------
+  AlertsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /siemlessly/alerts
+      RetentionInDays: 30
+
+  # --------------------------------------------------------
+  # SNS Topic for Alerts
+  # --------------------------------------------------------
+  SiemAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "siem-alerts-${AWS::AccountId}-${AWS::Region}"
+
+  # --------------------------------------------------------
+  # Lambda IAM Roles (explicit to avoid SAM circular dependency)
+  # --------------------------------------------------------
+  QueryEngineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3Read
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::siem-data-${AWS::AccountId}-${AWS::Region}"
+                  - !Sub "arn:aws:s3:::siem-data-${AWS::AccountId}-${AWS::Region}/*"
+
+  DetectionEngineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3Read
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::siem-data-${AWS::AccountId}-${AWS::Region}"
+                  - !Sub "arn:aws:s3:::siem-data-${AWS::AccountId}-${AWS::Region}/*"
+        - PolicyName: SNSPublish
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref SiemAlertsTopic
+        - PolicyName: CloudWatchLogs
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub "${AlertsLogGroup.Arn}:*"
+
+  # --------------------------------------------------------
+  # DuckDB Lambdas
+  # --------------------------------------------------------
+  QueryEngineFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambda/
+      Handler: query_engine.lambda_handler
+      Role: !GetAtt QueryEngineRole.Arn
+      Environment:
+        Variables:
+          S3_BUCKET: !Sub "siem-data-${AWS::AccountId}-${AWS::Region}"
+
+  DetectionEngineFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambda/
+      Handler: detection_engine.lambda_handler
+      Role: !GetAtt DetectionEngineRole.Arn
+      Environment:
+        Variables:
+          S3_BUCKET: !Sub "siem-data-${AWS::AccountId}-${AWS::Region}"
+          ALERTS_LOG_GROUP: !Ref AlertsLogGroup
+          RULES_CACHE_TTL: "300"
+          SOURCES_CACHE_TTL: "600"
+      Events:
+        NewProcessedDataUpload:
+          Type: S3
+          Properties:
+            Bucket: !Ref SiemDataBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: processed/
+                  - Name: suffix
+                    Value: .parquet
+        ScheduledDetection:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 hour)
+            Name: HourlySiemDetections
+            Description: Runs scheduled DuckDB queries against recent parquet logs
+
+Outputs:
+  SiemDataBucketName:
+    Value: !Ref SiemDataBucket
+    Description: S3 bucket for raw logs and processed parquet files
+
+  SiemAlertsTopicArn:
+    Value: !Ref SiemAlertsTopic
+    Description: SNS topic ARN for SIEM alerts

@@ -1,0 +1,9 @@
+[
+  {
+    "name": "web_logs",
+    "description": "HTTP access logs from web servers",
+    "parquet_path": "s3://{bucket}/processed/*/*.parquet",
+    "raw_path": "s3://{bucket}/raw/http-logs/",
+    "schema_file": "schemas/web_logs.avsc"
+  }
+]
