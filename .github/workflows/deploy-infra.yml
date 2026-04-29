@@ -1,0 +1,43 @@
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+  workflow_dispatch:
+    inputs:
+      stack_name:
+        description: "CloudFormation stack name"
+        required: true
+        default: "siemlessly"
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup SAM
+        uses: aws-actions/aws-sam-deploy-action@v3
+        with:
+          template-path: infra/template.yaml
+          stack-name: ${{ github.event.inputs.stack_name || 'siemlessly' }}
+          s3-bucket: ${{ secrets.SAM_S3_BUCKET }}
+          s3-prefix: sam/
+          parameter-overrides: |
+            SiemDataBucket=${{ secrets.SIEM_DATA_BUCKET }}
+          resolve-s3: true
+          no-fail-on-empty-changeset: true
+          capability: ["CAPABILITY_IAM", "CAPABILITY_NAMED_IAM"]
