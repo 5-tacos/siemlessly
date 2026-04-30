@@ -1,9 +1,7 @@
 import os
 import json
 import tarfile
-import tempfile
 import boto3
-import yaml
 import pyarrow as pa
 import pyarrow.parquet as pq
 from io import BytesIO
@@ -13,27 +11,12 @@ S3_BUCKET = os.environ.get('S3_BUCKET', 'siem-data-local')
 
 s3_client = boto3.client('s3')
 
-def load_schema(bucket, prefix):
-    """Attempt to load a schema.yaml from the same S3 prefix."""
-    try:
-        schema_key = os.path.join(prefix, 'schema.yaml')
-        response = s3_client.get_object(Bucket=bucket, Key=schema_key)
-        schema_data = yaml.safe_load(response['Body'])
-        print(f"Loaded schema from s3://{bucket}/{schema_key}")
-        return schema_data
-    except s3_client.exceptions.NoSuchKey:
-        print(f"No schema.yaml found in s3://{bucket}/{prefix}, proceeding with inferred schema.")
-        return None
-    except Exception as e:
-        print(f"Error loading schema: {e}")
-        return None
 
 def process_tarball(bucket, key):
     """
     Streams a tarball from S3, parses JSON logs, and writes them to Parquet.
     """
     prefix = os.path.dirname(key)
-    schema = load_schema(bucket, prefix)
     
     # We will buffer rows into memory before writing out to Parquet.
     # For a 15GB tarball, we MUST batch writes to avoid OOM.

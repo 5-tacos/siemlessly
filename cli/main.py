@@ -35,26 +35,32 @@ def get_s3_client():
 def resolve_source(query: str, bucket: str) -> str:
     """Replace source names in query with full S3 paths.
 
-    Looks for patterns like 'source_name' or "source_name" in FROM/JOIN clauses
-    and resolves them using sources/sources.json from S3.
+    Matches bare (unquoted) identifiers after FROM/JOIN keywords that
+    correspond to known source names and wraps them in the resolved
+    S3 path.  Quoted strings and other identifiers are left alone.
     """
+    import re
+
     s3 = get_s3_client()
     response = s3.get_object(Bucket=bucket, Key=SOURCES_S3_KEY)
     sources = json.loads(response["Body"].read().decode("utf-8"))
     source_map = {s["name"]: s for s in sources}
 
-    # Replace 'source_name' or "source_name" in the query
-    import re
-
     def replace_source(match):
-        quote = match.group(1)
+        prefix = match.group(1)  # FROM/JOIN keyword + whitespace
         name = match.group(2)
         if name in source_map:
             path = source_map[name]["parquet_path"].replace("{bucket}", bucket)
-            return f"{quote}{path}{quote}"
+            return f"{prefix}'{path}'"
         return match.group(0)
 
-    resolved = re.sub(r"(['\"])([\w_]+)\1", replace_source, query)
+    # Match bare identifiers after FROM or JOIN (case-insensitive)
+    resolved = re.sub(
+        r"((?:FROM|JOIN)\s+)(\w+)",
+        replace_source,
+        query,
+        flags=re.IGNORECASE,
+    )
     return resolved
 
 

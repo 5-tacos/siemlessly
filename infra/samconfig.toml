@@ -8,6 +8,7 @@ region = "us-west-2"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
 image_repositories = []
+parameter_overrides = "SubnetIds=subnet-0bafb3ebb478c0ebf SecurityGroupId=sg-0ed5739445c1b2166"
 
 [default.global.parameters]
 region = "us-west-2"
