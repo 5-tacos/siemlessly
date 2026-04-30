@@ -23,21 +23,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup SAM CLI
+        uses: aws-actions/setup-sam@v2
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Setup SAM
-        uses: aws-actions/aws-sam-deploy-action@v3
-        with:
-          template-path: infra/template.yaml
-          stack-name: ${{ github.event.inputs.stack_name || 'siemlessly' }}
-          s3-bucket: ${{ secrets.SAM_S3_BUCKET }}
-          s3-prefix: sam/
-          parameter-overrides: |
-            SiemDataBucket=${{ secrets.SIEM_DATA_BUCKET }}
-          resolve-s3: true
-          no-fail-on-empty-changeset: true
-          capability: ["CAPABILITY_IAM", "CAPABILITY_NAMED_IAM"]
+      - name: SAM Build
+        run: sam build --template-file infra/template.yaml
+
+      - name: SAM Deploy
+        run: |
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name ${{ github.event.inputs.stack_name || 'siemlessly' }} \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
