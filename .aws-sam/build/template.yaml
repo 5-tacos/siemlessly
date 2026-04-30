@@ -1,6 +1,14 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: Serverless SIEM with DuckDB and Fargate
+Parameters:
+  SubnetIds:
+    Type: CommaDelimitedList
+    Description: Comma-separated subnet IDs for Fargate tasks (must have internet
+      access)
+  SecurityGroupId:
+    Type: String
+    Description: Security group ID for Fargate tasks
 Globals:
   Function:
     Timeout: 60
@@ -14,6 +22,9 @@ Resources:
     Properties:
       BucketName:
         Fn::Sub: siem-data-${AWS::AccountId}-${AWS::Region}
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
       LifecycleConfiguration:
         Rules:
         - Id: TransitionToIA
@@ -58,6 +69,16 @@ Resources:
           Action: sts:AssumeRole
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+      - PolicyName: IngestionLogs
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource:
+              Fn::Sub: arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/siem-ingestion:*
   SiemIngestionTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
@@ -76,7 +97,7 @@ Resources:
         - Arn
       ContainerDefinitions:
       - Name: IngestionContainer
-        Image: REPLACE_WITH_ECR_IMAGE_URI
+        Image: '093487859380.dkr.ecr.us-west-2.amazonaws.com/siemlessly/ingestion'
         Environment:
         - Name: S3_BUCKET
           Value:
@@ -88,6 +109,91 @@ Resources:
             awslogs-region:
               Ref: AWS::Region
             awslogs-stream-prefix: ecs
+  IngestionEventRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: events.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:
+      - PolicyName: RunFargateTask
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action: ecs:RunTask
+            Resource:
+              Ref: SiemIngestionTaskDefinition
+            Condition:
+              ArnLike:
+                ecs:cluster:
+                  Fn::GetAtt:
+                  - SiemEcsCluster
+                  - Arn
+          - Effect: Allow
+            Action: iam:PassRole
+            Resource:
+            - Fn::GetAtt:
+              - SiemIngestionTaskRole
+              - Arn
+            - Fn::GetAtt:
+              - SiemIngestionTaskExecutionRole
+              - Arn
+  IngestionTriggerRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: SiemRawLogIngestion
+      Description: Triggers Fargate ingestion when raw logs are uploaded to S3
+      State: ENABLED
+      EventPattern:
+        source:
+        - aws.s3
+        detail-type:
+        - Object Created
+        detail:
+          bucket:
+            name:
+            - Fn::Sub: siem-data-${AWS::AccountId}-${AWS::Region}
+          object:
+            key:
+            - prefix: raw/
+      Targets:
+      - Id: FargateIngestionTask
+        Arn:
+          Fn::GetAtt:
+          - SiemEcsCluster
+          - Arn
+        RoleArn:
+          Fn::GetAtt:
+          - IngestionEventRole
+          - Arn
+        EcsParameters:
+          TaskDefinitionArn:
+            Ref: SiemIngestionTaskDefinition
+          LaunchType: FARGATE
+          TaskCount: 1
+          NetworkConfiguration:
+            AwsVpcConfiguration:
+              Subnets:
+                Ref: SubnetIds
+              SecurityGroups:
+              - Ref: SecurityGroupId
+              AssignPublicIp: ENABLED
+        InputTransformer:
+          InputPathsMap:
+            bucket: $.detail.bucket.name
+            key: $.detail.object.key
+          InputTemplate: "{\n  \"containerOverrides\": [\n    {\n      \"name\": \"\
+            IngestionContainer\",\n      \"environment\": [\n        {\n         \
+            \ \"name\": \"TARGET_S3_URL\",\n          \"value\": \"s3://<bucket>/<key>\"\
+            \n        }\n      ]\n    }\n  ]\n}\n"
+  IngestionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/siem-ingestion
+      RetentionInDays: 14
   AlertsLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
