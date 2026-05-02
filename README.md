@@ -266,24 +266,47 @@ Rules use source names from `sources.json` as table names in their SQL queries
 (e.g. `FROM web_logs`). CloudWatch Logs is always written to. `destinations` is
 optional per rule.
 
-## CLI
+## Quickstart (local)
 
 ```bash
-# Query logs by source name
-siemlessly query run "SELECT * FROM web_logs WHERE status_code = 500"
+# 1. Clone and install
+git clone <repo-url> && cd siemlessly
+make setup          # creates .venv, installs CLI dependencies
 
-# Query by raw S3 path
-siemlessly query run "SELECT * FROM 's3://bucket/processed/...'"
+# 2. Launch the interactive shell
+make shell
+```
 
-# View schema
-siemlessly query schema "s3://bucket/processed/.../*.parquet"
+The shell walks you through AWS profile and bucket selection, then drops you
+into a REPL where you can type SQL directly:
 
-# List sources
-siemlessly sources list
+```
+siemlessly> SELECT employee_id, count(*) FROM auth_logs
+            WHERE success = false GROUP BY 1
+            ORDER BY 2 DESC LIMIT 5;
 
-# View alerts from CloudWatch
-siemlessly alerts list --severity critical --days 7
-siemlessly alerts get <rule-id>
+siemlessly> .sources          # list available data sources
+siemlessly> .alerts --severity critical
+siemlessly> .rules            # list deployed detection rules
+siemlessly> .help             # full command reference
+```
+
+### Non-interactive CLI
+
+The original `cli/main.py` is still available for scripting:
+
+```bash
+source .venv/bin/activate
+python cli/main.py query run "SELECT * FROM auth_logs LIMIT 10" -b <bucket>
+python cli/main.py alerts list --severity critical --days 7
+python cli/main.py sources list -b <bucket>
+```
+
+## Development
+
+```bash
+make setup-dev      # installs CLI + test dependencies
+make test           # runs pytest (36 tests)
 ```
 
 ## Detection rules
@@ -295,3 +318,6 @@ Rules are evaluated:
 
 Each rule's query uses DuckDB to query Parquet files directly from S3. Use
 `{bucket}` as a placeholder for the bucket name in source definitions.
+
+See `config/rules/rules.json` for the 10 deployed rules and `docs/findings.md`
+for the security findings they detect.
