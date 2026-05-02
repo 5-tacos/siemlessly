@@ -416,20 +416,25 @@ def run_sql(state: ShellState, query: str):
         print(f"\n  {DIM}0 rows returned.{RESET}\n")
         return
 
-    # Compute column widths (cap to terminal-friendly sizes)
-    term_width = shutil.get_terminal_size().columns
-    max_col_w = max(20, (term_width - 4) // max(len(columns), 1) - 3)
-
-    # Convert all values to truncated strings
+    # Convert all values to strings (no truncation yet)
     str_rows = []
     for row in rows[:200]:  # cap display at 200 rows
-        str_rows.append([str(v)[:max_col_w] for v in row])
+        str_rows.append([str(v) for v in row])
 
-    # Column widths = max of header and all values
-    col_widths = [
-        min(max_col_w, max(len(c), *(len(r[i]) for r in str_rows)))
-        for i, c in enumerate(columns)
-    ]
+    # Auto-size columns based on actual data, cap at 80 chars per column
+    MAX_COL = 80
+    col_widths = []
+    for i, c in enumerate(columns):
+        w = len(c)
+        for r in str_rows:
+            w = max(w, len(r[i]))
+        col_widths.append(min(w, MAX_COL))
+
+    # Truncate values that exceed the cap
+    for r in str_rows:
+        for i in range(len(r)):
+            if len(r[i]) > MAX_COL:
+                r[i] = r[i][: MAX_COL - 1] + "…"
 
     # Print header
     header = "  ".join(f"{BOLD}{c:<{col_widths[i]}}{RESET}" for i, c in enumerate(columns))
