@@ -267,13 +267,15 @@ def cmd_schema(state: ShellState, args: str):
 
     con = state.get_connection()
     try:
-        result = con.execute(f"DESCRIBE SELECT * FROM '{path}'").fetchdf()
+        rows = con.execute(f"DESCRIBE SELECT * FROM '{path}'").fetchall()
         print()
         print(f"  {BOLD}Schema: {name}{RESET}")
         print(f"  {DIM}Path: {path}{RESET}")
         print()
-        for _, row in result.iterrows():
-            print(f"    {CYAN}{row['column_name']:<28}{RESET} {row['column_type']}")
+        for row in rows:
+            col_name = row[0]
+            col_type = row[1]
+            print(f"    {CYAN}{col_name:<28}{RESET} {col_type}")
         print()
     except Exception as e:
         print(f"  {RED}Error: {e}{RESET}")
@@ -401,29 +403,46 @@ def run_sql(state: ShellState, query: str):
     resolved = state.resolve_query(query)
 
     try:
-        result = con.execute(resolved).fetchdf()
+        result = con.execute(resolved)
+        columns = [desc[0] for desc in result.description]
+        rows = result.fetchall()
     except Exception as e:
         print(f"\n  {RED}Query error: {e}{RESET}\n")
         return
 
-    n_rows = len(result)
+    n_rows = len(rows)
 
     if n_rows == 0:
         print(f"\n  {DIM}0 rows returned.{RESET}\n")
         return
 
-    # Print using DuckDB-style box formatting
+    # Compute column widths (cap to terminal-friendly sizes)
     term_width = shutil.get_terminal_size().columns
-    max_col_width = max(20, (term_width - 4) // max(len(result.columns), 1) - 3)
+    max_col_w = max(20, (term_width - 4) // max(len(columns), 1) - 3)
 
-    # Truncate wide columns for display
-    display = result.copy()
-    for col in display.columns:
-        display[col] = display[col].astype(str).str[:max_col_width]
+    # Convert all values to truncated strings
+    str_rows = []
+    for row in rows[:200]:  # cap display at 200 rows
+        str_rows.append([str(v)[:max_col_w] for v in row])
 
-    print()
-    print(display.to_string(index=False, max_rows=100))
-    print(f"\n  {DIM}{n_rows} row{'s' if n_rows != 1 else ''} returned.{RESET}\n")
+    # Column widths = max of header and all values
+    col_widths = [
+        min(max_col_w, max(len(c), *(len(r[i]) for r in str_rows)))
+        for i, c in enumerate(columns)
+    ]
+
+    # Print header
+    header = "  ".join(f"{BOLD}{c:<{col_widths[i]}}{RESET}" for i, c in enumerate(columns))
+    print(f"\n  {header}")
+    print(f"  {'  '.join('─' * w for w in col_widths)}")
+
+    # Print rows
+    for sr in str_rows:
+        line = "  ".join(f"{sr[i]:<{col_widths[i]}}" for i in range(len(columns)))
+        print(f"  {line}")
+
+    suffix = f" (showing first 200)" if n_rows > 200 else ""
+    print(f"\n  {DIM}{n_rows} row{'s' if n_rows != 1 else ''} returned.{suffix}{RESET}\n")
 
 
 # ── REPL ────────────────────────────────────────────────────────
