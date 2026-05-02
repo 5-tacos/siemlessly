@@ -21,3 +21,6 @@ data/
 
 # pytest
 .pytest_cache/
+
+# AWS SAM
+.aws-sam/
