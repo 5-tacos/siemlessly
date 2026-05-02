@@ -159,7 +159,11 @@ def forward_to_destinations(alert, rule):
         config = dest.get("config", {})
 
         try:
-            if dest_type == "sns":
+            if dest_type == "cloudwatch":
+                # CloudWatch is always written via write_alert_to_cloudwatch;
+                # listing it in destinations is declarative — nothing extra to do.
+                continue
+            elif dest_type == "sns":
                 topic_arn = config.get("topic_arn")
                 if not topic_arn:
                     print(f"Skipping SNS destination: no topic_arn configured")
@@ -175,20 +179,22 @@ def forward_to_destinations(alert, rule):
                 if not webhook_url:
                     print(f"Skipping webhook destination: no url configured")
                     continue
-                import requests
+                import urllib.request
 
-                requests.post(
+                req = urllib.request.Request(
                     webhook_url,
-                    json={
+                    data=json.dumps({
                         "rule_id": rule["id"],
                         "rule_name": rule["name"],
                         "severity": rule["severity"],
                         "matches_count": alert["matches_count"],
                         "matches": alert["matches"],
                         "timestamp": datetime.now(timezone.utc).isoformat(),
-                    },
-                    timeout=10,
+                    }, default=str).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
                 )
+                urllib.request.urlopen(req, timeout=10)
                 print(f"Forwarded alert to webhook destination")
             else:
                 print(f"Unknown destination type: {dest_type}")
@@ -236,12 +242,25 @@ def run_detections(data_source=None):
     for rule in enabled_rules:
         try:
             if data_source:
-                # Event-driven: replace source names with the specific file
+                # Event-driven: replace source names with the specific file.
+                # Uses regex to only match bare identifiers after FROM/JOIN,
+                # avoiding corruption of column names or string literals.
                 sources = load_sources()
-                source_names = {s["name"] for s in sources}
-                target_query = rule["query"]
-                for name in source_names:
-                    target_query = target_query.replace(name, f"'{data_source}'")
+                source_map = {s["name"] for s in sources}
+
+                def _replace_with_file(match):
+                    prefix = match.group(1)
+                    name = match.group(2)
+                    if name in source_map:
+                        return f"{prefix}'{data_source}'"
+                    return match.group(0)
+
+                target_query = re.sub(
+                    r"((?:FROM|JOIN)\s+)(\w+)",
+                    _replace_with_file,
+                    rule["query"],
+                    flags=re.IGNORECASE,
+                )
             else:
                 # Scheduled: resolve to full source paths
                 target_query = resolve_source_names(rule["query"])

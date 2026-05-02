@@ -13,7 +13,7 @@ Parameters:
 Globals:
   Function:
     Timeout: 300
-    MemorySize: 4096
+    MemorySize: 3008
     Runtime: python3.13
     Architectures:
       - x86_64
@@ -300,7 +300,7 @@ Resources:
       CodeUri: lambda/
       Handler: detection_engine.lambda_handler
       Timeout: 600
-      MemorySize: 6144
+      MemorySize: 3008
       Role: !GetAtt DetectionEngineRole.Arn
       Environment:
         Variables:
