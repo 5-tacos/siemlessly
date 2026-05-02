@@ -1,9 +1,44 @@
 [
   {
-    "name": "web_logs",
-    "description": "HTTP access logs from web servers",
-    "parquet_path": "s3://{bucket}/processed/*/*.parquet",
-    "raw_path": "s3://{bucket}/raw/http-logs/",
-    "schema_file": "schemas/web_logs.avsc"
+    "name": "http_logs",
+    "description": "HTTP/API access logs from load balancers and services",
+    "parquet_path": "s3://{bucket}/processed/http_logs/dt=*/*.parquet",
+    "raw_path": "s3://{bucket}/raw/"
+  },
+  {
+    "name": "db_queries",
+    "description": "Database query audit logs (SELECT, INSERT, UPDATE, DELETE)",
+    "parquet_path": "s3://{bucket}/processed/db_queries/dt=*/*.parquet",
+    "raw_path": "s3://{bucket}/raw/"
+  },
+  {
+    "name": "cloudtrail",
+    "description": "AWS CloudTrail API activity logs",
+    "parquet_path": "s3://{bucket}/processed/cloudtrail/dt=*/*.parquet",
+    "raw_path": "s3://{bucket}/raw/"
+  },
+  {
+    "name": "network_flows",
+    "description": "VPC flow / firewall network connection logs",
+    "parquet_path": "s3://{bucket}/processed/network_flows/dt=*/*.parquet",
+    "raw_path": "s3://{bucket}/raw/"
+  },
+  {
+    "name": "ehr_access",
+    "description": "Electronic Health Record access audit logs (view, edit, export, download)",
+    "parquet_path": "s3://{bucket}/processed/ehr_access/dt=*/*.parquet",
+    "raw_path": "s3://{bucket}/raw/"
+  },
+  {
+    "name": "auth_logs",
+    "description": "Authentication events (login, logout, MFA, token refresh)",
+    "parquet_path": "s3://{bucket}/processed/auth_logs/dt=*/*.parquet",
+    "raw_path": "s3://{bucket}/raw/"
+  },
+  {
+    "name": "vpn_logs",
+    "description": "VPN connection and data transfer logs",
+    "parquet_path": "s3://{bucket}/processed/vpn_logs/dt=*/*.parquet",
+    "raw_path": "s3://{bucket}/raw/"
   }
 ]
