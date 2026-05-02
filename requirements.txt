@@ -1,0 +1,6 @@
+# CLI / Shell dependencies
+duckdb>=1.0
+boto3>=1.28
+prompt_toolkit>=3.0
+pygments>=2.15
+typer>=0.9

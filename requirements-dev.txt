@@ -1,0 +1,5 @@
+# Dev/test dependencies (on top of requirements.txt)
+-r requirements.txt
+pytest>=8.0
+moto[all]>=5.0
+pyarrow>=14.0
