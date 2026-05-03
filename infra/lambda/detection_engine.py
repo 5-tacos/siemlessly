@@ -101,6 +101,7 @@ def setup_duckdb():
     global _duckdb_ready
     if _duckdb_ready:
         return
+    con.execute("SET home_directory='/tmp';")
     con.execute("INSTALL httpfs;")
     con.execute("LOAD httpfs;")
     con.execute("INSTALL aws;")
