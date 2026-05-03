@@ -5,7 +5,7 @@
     "description": "Detects VPN connect events from a city not seen in the employee's prior 30-day baseline. Catches credential compromise scenarios like EMP-003 connecting from Miami and Seattle when their baseline is San Francisco.",
     "severity": "high",
     "enabled": true,
-    "query": "WITH baseline AS (SELECT employee_id, json_extract_string(geo, '$.city') AS city FROM vpn_logs WHERE event_type = 'connect' AND timestamp < (now() - INTERVAL 7 DAY) GROUP BY 1, 2), recent AS (SELECT *, json_extract_string(geo, '$.city') AS city FROM vpn_logs WHERE event_type = 'connect' AND timestamp >= (now() - INTERVAL 7 DAY)) SELECT r.employee_id, r.timestamp, r.source_ip, r.city, r.vpn_endpoint, r.event_id FROM recent r LEFT JOIN baseline b ON b.employee_id = r.employee_id AND b.city = r.city WHERE b.city IS NULL AND r.city IS NOT NULL",
+    "query": "WITH baseline AS (SELECT employee_id, json_extract_string(geo, '$.city') AS city FROM vpn_logs WHERE event_type = 'connect' AND CAST(timestamp AS TIMESTAMPTZ) < (now() - INTERVAL 7 DAY) GROUP BY 1, 2), recent AS (SELECT *, json_extract_string(geo, '$.city') AS city FROM vpn_logs WHERE event_type = 'connect' AND CAST(timestamp AS TIMESTAMPTZ) >= (now() - INTERVAL 7 DAY)) SELECT r.employee_id, r.timestamp, r.source_ip, r.city, r.vpn_endpoint, r.event_id FROM recent r LEFT JOIN baseline b ON b.employee_id = r.employee_id AND b.city = r.city WHERE b.city IS NULL AND r.city IS NOT NULL",
     "destinations": [
       {
         "type": "cloudwatch"
@@ -18,7 +18,7 @@
     "description": "Detects two successful authentication events for the same employee from different cities within a 2-hour window. Catches concurrent sessions indicating credential sharing or compromise, such as EMP-003 logging in from San Francisco and Miami simultaneously.",
     "severity": "critical",
     "enabled": true,
-    "query": "SELECT a.employee_id, a.timestamp AS login_1_time, json_extract_string(a.geo, '$.city') AS city_1, a.source_ip AS ip_1, b.timestamp AS login_2_time, json_extract_string(b.geo, '$.city') AS city_2, b.source_ip AS ip_2 FROM auth_logs a JOIN auth_logs b ON a.employee_id = b.employee_id AND a.success = true AND b.success = true AND b.timestamp > a.timestamp AND b.timestamp <= a.timestamp + INTERVAL 2 HOUR AND json_extract_string(a.geo, '$.city') <> json_extract_string(b.geo, '$.city') WHERE a.event_type IN ('login_success', 'mfa_success') AND b.event_type IN ('login_success', 'mfa_success')",
+    "query": "SELECT a.employee_id, a.timestamp AS login_1_time, json_extract_string(a.geo, '$.city') AS city_1, a.source_ip AS ip_1, b.timestamp AS login_2_time, json_extract_string(b.geo, '$.city') AS city_2, b.source_ip AS ip_2 FROM auth_logs a JOIN auth_logs b ON a.employee_id = b.employee_id AND a.success = true AND b.success = true AND CAST(b.timestamp AS TIMESTAMPTZ) > CAST(a.timestamp AS TIMESTAMPTZ) AND CAST(b.timestamp AS TIMESTAMPTZ) <= CAST(a.timestamp AS TIMESTAMPTZ) + INTERVAL 2 HOUR AND json_extract_string(a.geo, '$.city') <> json_extract_string(b.geo, '$.city') WHERE a.event_type IN ('login_success', 'mfa_success') AND b.event_type IN ('login_success', 'mfa_success')",
     "destinations": [
       {
         "type": "cloudwatch"
@@ -31,7 +31,7 @@
     "description": "Detects successful logins from a /24 subnet the employee has never used before. Adds confidence to impossible-travel detections by identifying unfamiliar network origins.",
     "severity": "medium",
     "enabled": true,
-    "query": "WITH ip_prefix AS (SELECT employee_id, regexp_extract(source_ip, '^(\\d+\\.\\d+\\.\\d+)\\.', 1) AS prefix, min(timestamp) AS first_seen FROM auth_logs WHERE success = true GROUP BY 1, 2), recent_logins AS (SELECT *, regexp_extract(source_ip, '^(\\d+\\.\\d+\\.\\d+)\\.', 1) AS prefix FROM auth_logs WHERE success = true AND timestamp >= (now() - INTERVAL 7 DAY)) SELECT r.employee_id, r.timestamp, r.source_ip, r.prefix, json_extract_string(r.geo, '$.city') AS city, r.event_type, r.risk_score, r.event_id FROM recent_logins r LEFT JOIN ip_prefix p ON p.employee_id = r.employee_id AND p.prefix = r.prefix AND p.first_seen < (now() - INTERVAL 7 DAY) WHERE p.prefix IS NULL",
+    "query": "WITH ip_prefix AS (SELECT employee_id, regexp_extract(source_ip, '^(\\d+\\.\\d+\\.\\d+)\\.', 1) AS prefix, min(timestamp) AS first_seen FROM auth_logs WHERE success = true GROUP BY 1, 2), recent_logins AS (SELECT *, regexp_extract(source_ip, '^(\\d+\\.\\d+\\.\\d+)\\.', 1) AS prefix FROM auth_logs WHERE success = true AND CAST(timestamp AS TIMESTAMPTZ) >= (now() - INTERVAL 7 DAY)) SELECT r.employee_id, r.timestamp, r.source_ip, r.prefix, json_extract_string(r.geo, '$.city') AS city, r.event_type, r.risk_score, r.event_id FROM recent_logins r LEFT JOIN ip_prefix p ON p.employee_id = r.employee_id AND p.prefix = r.prefix AND CAST(p.first_seen AS TIMESTAMPTZ) < (now() - INTERVAL 7 DAY) WHERE p.prefix IS NULL",
     "destinations": [
       {
         "type": "cloudwatch"
@@ -44,7 +44,7 @@
     "description": "Detects employees using 4 or more distinct source IPs within a single day across all log types. EMP-003 used 6 distinct IPs on the attack day vs. the typical 2-3.",
     "severity": "medium",
     "enabled": true,
-    "query": "WITH all_activity AS (SELECT timestamp, json_extract_string(identity, '$.employee_id') AS employee_id, source_ip FROM http_logs WHERE json_extract_string(identity, '$.type') = 'user' UNION ALL SELECT timestamp, employee_id, source_ip FROM ehr_access UNION ALL SELECT timestamp, employee_id, source_ip FROM auth_logs UNION ALL SELECT timestamp, employee_id, source_ip FROM vpn_logs) SELECT employee_id, CAST(timestamp AS DATE) AS activity_date, count(DISTINCT source_ip) AS distinct_ips, list(DISTINCT source_ip) AS ip_list FROM all_activity WHERE employee_id IS NOT NULL AND timestamp >= (now() - INTERVAL 7 DAY) GROUP BY 1, 2 HAVING distinct_ips >= 4 ORDER BY distinct_ips DESC",
+    "query": "WITH all_activity AS (SELECT timestamp, json_extract_string(identity, '$.employee_id') AS employee_id, source_ip FROM http_logs WHERE json_extract_string(identity, '$.type') = 'user' UNION ALL SELECT timestamp, employee_id, source_ip FROM ehr_access UNION ALL SELECT timestamp, employee_id, source_ip FROM auth_logs UNION ALL SELECT timestamp, employee_id, source_ip FROM vpn_logs) SELECT employee_id, CAST(timestamp AS DATE) AS activity_date, count(DISTINCT source_ip) AS distinct_ips, list(DISTINCT source_ip) AS ip_list FROM all_activity WHERE employee_id IS NOT NULL AND CAST(timestamp AS TIMESTAMPTZ) >= (now() - INTERVAL 7 DAY) GROUP BY 1, 2 HAVING distinct_ips >= 4 ORDER BY distinct_ips DESC",
     "destinations": [
       {
         "type": "cloudwatch"
@@ -70,7 +70,7 @@
     "description": "Detects employees touching an unusually high number of distinct patient records in a 7-day window. EMP-027 touched 3,401 distinct patients over 91 days—far above the median of 1,800.",
     "severity": "high",
     "enabled": true,
-    "query": "WITH per_employee AS (SELECT employee_id, count(DISTINCT patient_id) AS distinct_patients FROM ehr_access WHERE timestamp >= (now() - INTERVAL 7 DAY) GROUP BY 1) SELECT employee_id, distinct_patients FROM per_employee WHERE distinct_patients > (SELECT quantile_cont(distinct_patients, 0.95) FROM per_employee WHERE distinct_patients > 0) ORDER BY distinct_patients DESC",
+    "query": "WITH per_employee AS (SELECT employee_id, count(DISTINCT patient_id) AS distinct_patients FROM ehr_access WHERE CAST(timestamp AS TIMESTAMPTZ) >= (now() - INTERVAL 7 DAY) GROUP BY 1) SELECT employee_id, distinct_patients FROM per_employee WHERE distinct_patients > (SELECT quantile_cont(distinct_patients, 0.95) FROM per_employee WHERE distinct_patients > 0) ORDER BY distinct_patients DESC",
     "destinations": [
       {
         "type": "cloudwatch"
@@ -83,7 +83,7 @@
     "description": "Detects employees targeted by login failures from 3+ distinct source IPs over 30 days, indicating distributed credential stuffing. EMP-024 had 7 failures from 7 different IPs across the dataset.",
     "severity": "high",
     "enabled": true,
-    "query": "SELECT employee_id, count(*) AS total_failures, count(DISTINCT source_ip) AS distinct_ips, list(DISTINCT source_ip) AS ip_list, min(timestamp) AS first_failure, max(timestamp) AS last_failure FROM auth_logs WHERE event_type = 'login_failure' AND timestamp >= (now() - INTERVAL 30 DAY) GROUP BY 1 HAVING total_failures >= 5 OR (distinct_ips >= 3 AND total_failures >= 3) ORDER BY total_failures DESC",
+    "query": "SELECT employee_id, count(*) AS total_failures, count(DISTINCT source_ip) AS distinct_ips, list(DISTINCT source_ip) AS ip_list, min(timestamp) AS first_failure, max(timestamp) AS last_failure FROM auth_logs WHERE event_type = 'login_failure' AND CAST(timestamp AS TIMESTAMPTZ) >= (now() - INTERVAL 30 DAY) GROUP BY 1 HAVING total_failures >= 5 OR (distinct_ips >= 3 AND total_failures >= 3) ORDER BY total_failures DESC",
     "destinations": [
       {
         "type": "cloudwatch"
@@ -96,7 +96,7 @@
     "description": "Detects a single source IP hitting 10+ distinct low-MRN patient demographics endpoints within 2 hours—a sequential enumeration pattern. The attacker from Miami hit MRN-00000013 through MRN-00000486 in rapid succession.",
     "severity": "high",
     "enabled": true,
-    "query": "SELECT source_ip, count(DISTINCT regexp_extract(path, 'MRN-(\\d+)', 1)) AS distinct_mrns, min(timestamp) AS first_request, max(timestamp) AS last_request, list(DISTINCT regexp_extract(path, 'MRN-(\\d+)', 1)) AS mrn_list FROM http_logs WHERE path LIKE '%/patients/MRN-%/demographics%' AND CAST(regexp_extract(path, 'MRN-(\\d+)', 1) AS INT) < 1000 AND timestamp >= (now() - INTERVAL 7 DAY) GROUP BY source_ip HAVING distinct_mrns >= 10 AND last_request - first_request < INTERVAL 2 HOUR ORDER BY distinct_mrns DESC",
+    "query": "SELECT source_ip, count(DISTINCT regexp_extract(path, 'MRN-(\\d+)', 1)) AS distinct_mrns, min(timestamp) AS first_request, max(timestamp) AS last_request, list(DISTINCT regexp_extract(path, 'MRN-(\\d+)', 1)) AS mrn_list FROM http_logs WHERE path LIKE '%/patients/MRN-%/demographics%' AND CAST(regexp_extract(path, 'MRN-(\\d+)', 1) AS INT) < 1000 AND CAST(timestamp AS TIMESTAMPTZ) >= (now() - INTERVAL 7 DAY) GROUP BY source_ip HAVING distinct_mrns >= 10 AND CAST(last_request AS TIMESTAMPTZ) - CAST(first_request AS TIMESTAMPTZ) < INTERVAL 2 HOUR ORDER BY distinct_mrns DESC",
     "destinations": [
       {
         "type": "cloudwatch"
@@ -122,7 +122,7 @@
     "description": "Detects write operations (read_only=false) performed by IAM roles whose names suggest read-only or replica access. Future-proofing rule for privilege escalation detection.",
     "severity": "medium",
     "enabled": true,
-    "query": "SELECT event_id, timestamp, event_source, event_name, json_extract_string(user_identity, '$.arn') AS role_arn, json_extract_string(user_identity, '$.session_name') AS session_name, source_ip FROM cloudtrail WHERE read_only = false AND (json_extract_string(user_identity, '$.arn') LIKE '%ReadOnly%' OR json_extract_string(user_identity, '$.arn') LIKE '%Replica%' OR json_extract_string(user_identity, '$.arn') LIKE '%Reader%') AND timestamp >= (now() - INTERVAL 7 DAY) ORDER BY timestamp DESC",
+    "query": "SELECT event_id, timestamp, event_source, event_name, json_extract_string(user_identity, '$.arn') AS role_arn, json_extract_string(user_identity, '$.session_name') AS session_name, source_ip FROM cloudtrail WHERE read_only = false AND (json_extract_string(user_identity, '$.arn') LIKE '%ReadOnly%' OR json_extract_string(user_identity, '$.arn') LIKE '%Replica%' OR json_extract_string(user_identity, '$.arn') LIKE '%Reader%') AND CAST(timestamp AS TIMESTAMPTZ) >= (now() - INTERVAL 7 DAY) ORDER BY timestamp DESC",
     "destinations": [
       {
         "type": "cloudwatch"
