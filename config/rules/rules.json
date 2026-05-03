@@ -109,7 +109,7 @@
     "description": "Detects EHR access between 22:00-06:00 UTC from departments that are NOT 24/7 services (Emergency, ICU). Suppresses false positives from legitimate night-shift clinicians like EMP-017 in Emergency.",
     "severity": "medium",
     "enabled": true,
-    "query": "SELECT employee_id, department, CAST(timestamp AS DATE) AS date, count(*) AS access_count, count(DISTINCT patient_id) AS patients_touched FROM ehr_access WHERE EXTRACT(HOUR FROM CAST(timestamp AS TIMESTAMP)) NOT BETWEEN 6 AND 22 AND department NOT IN ('Emergency', 'ICU', 'Intensive Care') AND timestamp >= (now() - INTERVAL 7 DAY) GROUP BY 1, 2, 3 HAVING access_count >= 5 ORDER BY access_count DESC",
+    "query": "SELECT employee_id, department, CAST(timestamp AS DATE) AS date, count(*) AS access_count, count(DISTINCT patient_id) AS patients_touched FROM ehr_access WHERE EXTRACT(HOUR FROM CAST(timestamp AS TIMESTAMPTZ)) NOT BETWEEN 6 AND 22 AND department NOT IN ('Emergency', 'ICU', 'Intensive Care') AND CAST(timestamp AS TIMESTAMPTZ) >= (now() - INTERVAL 7 DAY) GROUP BY 1, 2, 3 HAVING access_count >= 5 ORDER BY access_count DESC",
     "destinations": [
       {
         "type": "cloudwatch"
