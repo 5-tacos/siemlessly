@@ -96,7 +96,7 @@
     "description": "Detects a single source IP hitting 10+ distinct low-MRN patient demographics endpoints within 2 hours—a sequential enumeration pattern. The attacker from Miami hit MRN-00000013 through MRN-00000486 in rapid succession.",
     "severity": "high",
     "enabled": true,
-    "query": "SELECT source_ip, count(DISTINCT regexp_extract(path, 'MRN-(\\d+)', 1)) AS distinct_mrns, min(timestamp) AS first_request, max(timestamp) AS last_request, list(DISTINCT regexp_extract(path, 'MRN-(\\d+)', 1)) AS mrn_list FROM http_logs WHERE path LIKE '%/patients/MRN-%/demographics%' AND CAST(regexp_extract(path, 'MRN-(\\d+)', 1) AS INT) < 1000 AND CAST(timestamp AS TIMESTAMPTZ) >= (now() - INTERVAL 7 DAY) GROUP BY source_ip HAVING distinct_mrns >= 10 AND CAST(last_request AS TIMESTAMPTZ) - CAST(first_request AS TIMESTAMPTZ) < INTERVAL 2 HOUR ORDER BY distinct_mrns DESC",
+    "query": "SELECT source_ip, count(DISTINCT regexp_extract(path, 'MRN-(\\d+)', 1)) AS distinct_mrns, min(timestamp) AS first_request, max(timestamp) AS last_request, list(DISTINCT regexp_extract(path, 'MRN-(\\d+)', 1)) AS mrn_list FROM http_logs WHERE path LIKE '%/patients/MRN-%/demographics%' AND CAST(regexp_extract(path, 'MRM-(\\d+)', 1) AS INT) < 1000 AND CAST(timestamp AS TIMESTAMPTZ) >= (now() - INTERVAL 7 DAY) GROUP BY source_ip HAVING distinct_mrns >= 10 AND CAST(last_request AS TIMESTAMPTZ) - CAST(first_request AS TIMESTAMPTZ) < INTERVAL 2 HOUR ORDER BY distinct_mrns DESC",
     "destinations": [
       {
         "type": "cloudwatch"
@@ -123,6 +123,19 @@
     "severity": "medium",
     "enabled": true,
     "query": "SELECT event_id, timestamp, event_source, event_name, json_extract_string(user_identity, '$.arn') AS role_arn, json_extract_string(user_identity, '$.session_name') AS session_name, source_ip FROM cloudtrail WHERE read_only = false AND (json_extract_string(user_identity, '$.arn') LIKE '%ReadOnly%' OR json_extract_string(user_identity, '$.arn') LIKE '%Replica%' OR json_extract_string(user_identity, '$.arn') LIKE '%Reader%') AND CAST(timestamp AS TIMESTAMPTZ) >= (now() - INTERVAL 7 DAY) ORDER BY timestamp DESC",
+    "destinations": [
+      {
+        "type": "cloudwatch"
+      }
+    ]
+  },
+  {
+    "id": "ehr-bulk-delete",
+    "name": "Bulk Deletion from EHR Database",
+    "description": "Detects bulk DELETE operations in EHR databases with high row counts (>=100 rows or >=5 delete statements), indicating potential data exfiltration or destructive action. Employees normally delete single records for corrections, not bulk deletions.",
+    "severity": "critical",
+    "enabled": true,
+    "query": "SELECT employee_id, table_name, COUNT(*) AS delete_count, SUM(rows_affected) AS total_rows_deleted, min(timestamp) AS first_delete, max(timestamp) AS last_delete FROM database_logs WHERE query_type = 'DELETE' AND CAST(timestamp AS TIMESTAMPTZ) >= (now() - INTERVAL 7 DAY) GROUP BY employee_id, table_name HAVING SUM(rows_affected) >= 100 OR COUNT(*) >= 5 ORDER BY total_rows_deleted DESC",
     "destinations": [
       {
         "type": "cloudwatch"
