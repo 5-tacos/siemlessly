@@ -266,6 +266,8 @@ Rules use source names from `sources.json` as table names in their SQL queries
 (e.g. `FROM web_logs`). CloudWatch Logs is always written to. `destinations` is
 optional per rule.
 
+> **Note on Data Types:** Due to the extraction process, all `timestamp` fields are stored as `VARCHAR` strings in the Parquet files. When writing SQL queries for detection rules that involve date/time logic or interval math (e.g., comparing against `now()`), you must explicitly cast the field: `CAST(timestamp AS TIMESTAMPTZ) >= (now() - INTERVAL 7 DAY)`.
+
 ## Quickstart (local)
 
 ```bash
